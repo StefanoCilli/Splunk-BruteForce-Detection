@@ -1,0 +1,21 @@
+# --- SSH Brute-Force Detection Queries ---
+
+# 1. Initial Investigation
+# Purpose: Filter the raw auth.log for login attempts.
+source="/var/log/auth.log" ("Failed password" OR "Accepted password")
+
+# 2. Field Extraction & User Targeting
+# Purpose: Use Regex to pull the username and source IP from the log string.
+source="/var/log/auth.log" "Failed password"
+| rex "Failed password for (?<user>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+)"
+| stats count by user, src_ip
+| where count > 5
+
+# 3. Correlation
+# Purpose: Group events by User and IP to find failures followed by success within 5 minutes.
+source="/var/log/auth.log" ("Failed password" OR "Accepted password")
+| rex "Failed password for (?<user>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+)"
+| rex "Accepted password for (?<user>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+)"
+| transaction user src_ip maxspan=5m
+| search "Failed password" AND "Accepted password"
+| table _time, user, src_ip, eventcount, duration
